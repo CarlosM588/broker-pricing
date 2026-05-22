@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Broker Quote Tool</title>
+<style>
+  :root{--ink:#0f172a;--line:#e2e8f0;--bg:#f1f5f9;--card:#fff;--green:#16a34a;
+        --blue:#2563eb;--amber:#d97706;--slate:#64748b;--red:#dc2626}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       background:var(--bg);color:var(--ink);line-height:1.45}
+  header{background:var(--ink);color:#fff;padding:22px 28px}
+  header h1{margin:0;font-size:22px}
+  header p{margin:6px 0 0;color:#94a3b8;font-size:13px}
+  .wrap{max-width:1080px;margin:0 auto;padding:24px;display:grid;grid-template-columns:340px 1fr;gap:24px}
+  @media(max-width:820px){.wrap{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;
+        box-shadow:0 1px 2px rgba(15,23,42,.04)}
+  .card h2{margin:0 0 14px;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:#475569}
+  label{display:block;font-size:13px;font-weight:600;margin:14px 0 5px;color:#334155}
+  input,select{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px;background:#fff}
+  .row2{display:flex;gap:12px}.row2>div{flex:1}
+  button{margin-top:20px;width:100%;padding:13px;background:var(--blue);color:#fff;border:0;border-radius:8px;
+         font-size:16px;font-weight:700;cursor:pointer}
+  button:hover{background:#1d4ed8}
+  .quote-big{font-size:40px;font-weight:800;color:var(--green);line-height:1}
+  .quote-cap{font-size:13px;color:var(--slate);margin:4px 0 18px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:6px}
+  @media(max-width:560px){.grid3{grid-template-columns:1fr 1fr}}
+  .kpi{background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .kpi .v{font-size:20px;font-weight:700}.kpi .l{font-size:12px;color:var(--slate);margin-top:2px}
+  .breakdown{margin-top:18px;border-top:1px solid var(--line);padding-top:14px;font-size:14px}
+  .breakdown .li{display:flex;justify-content:space-between;padding:5px 0}
+  .breakdown .li.total{font-weight:700;border-top:1px dashed var(--line);margin-top:4px;padding-top:8px}
+  .gauge{margin-top:18px;padding:12px 14px;border-radius:8px;font-size:13px}
+  .gauge.hot{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+  .gauge.soft{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+  .gauge.normal{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
+  .foot{grid-column:1/-1;font-size:12px;color:#94a3b8;text-align:center}
+  .src{font-size:12px;color:var(--slate);margin-top:10px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Broker Quote Tool</h1>
+  <p>Pick a lane. Get the benchmark carrier rate, what diesel is costing you, and a shipper quote with your margin built in. Built on <span id="hN"></span> real USDA rate records.</p>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h2>The load</h2>
+    <label for="origin">Origin (shipping region)</label>
+    <select id="origin"></select>
+    <label for="dest">Destination (market)</label>
+    <select id="dest"></select>
+    <label for="miles">Distance (miles)</label>
+    <input type="number" id="miles" min="1" step="10">
+    <div class="row2">
+      <div>
+        <label for="diesel">Diesel ($/gal)</label>
+        <input type="number" id="diesel" step="0.01">
+      </div>
+      <div>
+        <label for="margin">Your margin (%)</label>
+        <input type="number" id="margin" step="1" min="0" max="60">
+      </div>
+    </div>
+    <button onclick="quote()">Build the quote</button>
+    <div class="src" id="dieselSrc"></div>
+  </div>
+
+  <div class="card">
+    <h2>The quote</h2>
+    <div class="quote-big" id="qBig">--</div>
+    <div class="quote-cap" id="qCap"></div>
+
+    <div class="grid3">
+      <div class="kpi"><div class="v" id="kRate">--</div><div class="l">benchmark $/mile</div></div>
+      <div class="kpi"><div class="v" id="kCost">--</div><div class="l">carrier cost (all-in)</div></div>
+      <div class="kpi"><div class="v" id="kMargin">--</div><div class="l">your margin</div></div>
+    </div>
+
+    <div class="breakdown" id="breakdown"></div>
+    <div class="gauge" id="gauge"></div>
+  </div>
+
+  <div class="foot">
+    Prototype. Rates are USDA refrigerated-produce spot rates (all-in, fuel included), median by lane.
+    The quote is a benchmark to negotiate from, not a binding price.
+  </div>
+</div>
+
+<script>
+const DATA = {"lanes":{"Arizona":{"Atlanta":{"rpm":2.47,"p25":1.98,"p75":2.75,"truckload":4919,"miles":1993,"n":89,"last_year":2026},"Baltimore":{"rpm":2.58,"p25":2.37,"p75":2.85,"truckload":6621,"miles":2565,"n":62,"last_year":2026},"Boston":{"rpm":2.39,"p25":2.04,"p75":2.6,"truckload":6869,"miles":2875,"n":69,"last_year":2026},"Chicago":{"rpm":2.16,"p25":1.75,"p75":2.51,"truckload":4247,"miles":1968,"n":88,"last_year":2026},"Dallas":{"rpm":2.79,"p25":2.23,"p75":3.17,"truckload":3535,"miles":1267,"n":74,"last_year":2026},"Los Angeles":{"rpm":5.87,"p25":4.5,"p75":7.32,"truckload":900,"miles":153,"n":55,"last_year":2024},"Miami":{"rpm":2.39,"p25":2.05,"p75":2.74,"truckload":6202,"miles":2600,"n":54,"last_year":2026},"New York":{"rpm":2.44,"p25":1.93,"p75":2.77,"truckload":6396,"miles":2624,"n":91,"last_year":2026},"Philadelphia":{"rpm":2.45,"p25":2.12,"p75":2.72,"truckload":6306,"miles":2572,"n":68,"last_year":2026},"Seattle":{"rpm":2.53,"p25":2.22,"p75":2.76,"truckload":3294,"miles":1300,"n":36,"last_year":2026}},"California":{"Atlanta":{"rpm":2.39,"p25":1.87,"p75":2.67,"truckload":5311,"miles":2226,"n":106,"last_year":2026},"Baltimore":{"rpm":2.53,"p25":2.25,"p75":2.74,"truckload":6842,"miles":2709,"n":79,"last_year":2026},"Boston":{"rpm":2.39,"p25":1.97,"p75":2.58,"truckload":7267,"miles":3044,"n":87,"last_year":2026},"Chicago":{"rpm":2.16,"p25":1.67,"p75":2.45,"truckload":4481,"miles":2079,"n":103,"last_year":2026},"Dallas":{"rpm":2.65,"p25":2.14,"p75":2.89,"truckload":3901,"miles":1472,"n":106,"last_year":2026},"Los Angeles":{"rpm":5.45,"p25":4.04,"p75":7.3,"truckload":913,"miles":168,"n":89,"last_year":2025},"Miami":{"rpm":2.39,"p25":2.04,"p75":2.73,"truckload":6777,"miles":2839,"n":91,"last_year":2026},"New York":{"rpm":2.38,"p25":1.85,"p75":2.63,"truckload":6798,"miles":2853,"n":105,"last_year":2026},"Philadelphia":{"rpm":2.42,"p25":2.06,"p75":2.68,"truckload":6758,"miles":2788,"n":91,"last_year":2026},"Seattle":{"rpm":2.77,"p25":2.6,"p75":3.14,"truckload":3098,"miles":1119,"n":72,"last_year":2026}},"Florida":{"Atlanta":{"rpm":2.45,"p25":2.16,"p75":2.9,"truckload":1152,"miles":470,"n":89,"last_year":2026},"Baltimore":{"rpm":2.42,"p25":2.08,"p75":2.93,"truckload":2376,"miles":982,"n":67,"last_year":2026},"Boston":{"rpm":2.3,"p25":2.02,"p75":2.82,"truckload":3230,"miles":1403,"n":78,"last_year":2026},"Chicago":{"rpm":1.84,"p25":1.62,"p75":2.1,"truckload":2174,"miles":1182,"n":89,"last_year":2026},"Dallas":{"rpm":2.26,"p25":2.03,"p75":2.61,"truckload":2460,"miles":1090,"n":14,"last_year":2015},"Los Angeles":{"rpm":1.65,"p25":1.48,"p75":1.9,"truckload":4154,"miles":2510,"n":23,"last_year":2025},"Miami":{"rpm":2.85,"p25":2.71,"p75":3.24,"truckload":703,"miles":247,"n":38,"last_year":2025},"New York":{"rpm":2.33,"p25":2.02,"p75":2.85,"truckload":2718,"miles":1165,"n":89,"last_year":2026},"Philadelphia":{"rpm":2.25,"p25":2.01,"p75":2.89,"truckload":2439,"miles":1082,"n":78,"last_year":2026}},"Great Lakes":{"Atlanta":{"rpm":2.84,"p25":2.32,"p75":3.35,"truckload":2709,"miles":952,"n":103,"last_year":2025},"Baltimore":{"rpm":3.34,"p25":2.95,"p75":4.21,"truckload":3508,"miles":1049,"n":76,"last_year":2025},"Boston":{"rpm":3.13,"p25":2.66,"p75":3.72,"truckload":3928,"miles":1255,"n":88,"last_year":2025},"Chicago":{"rpm":3.84,"p25":3.19,"p75":4.26,"truckload":1137,"miles":296,"n":103,"last_year":2025},"Dallas":{"rpm":2.61,"p25":2.07,"p75":2.91,"truckload":2878,"miles":1102,"n":99,"last_year":2024},"Los Angeles":{"rpm":1.19,"p25":0.98,"p75":1.31,"truckload":2208,"miles":1850,"n":4,"last_year":2007},"Miami":{"rpm":2.73,"p25":2.32,"p75":3.1,"truckload":4475,"miles":1640,"n":88,"last_year":2025},"New York":{"rpm":3.38,"p25":2.81,"p75":4.05,"truckload":3580,"miles":1060,"n":103,"last_year":2025},"Philadelphia":{"rpm":3.31,"p25":2.81,"p75":3.69,"truckload":3165,"miles":957,"n":81,"last_year":2024}},"Indiana":{"Atlanta":{"rpm":3.63,"p25":3.44,"p75":3.89,"truckload":1596,"miles":440,"n":10,"last_year":2024},"Baltimore":{"rpm":2.82,"p25":2.69,"p75":3.42,"truckload":2083,"miles":740,"n":5,"last_year":2011},"Boston":{"rpm":2.4,"p25":2.32,"p75":2.65,"truckload":2644,"miles":1100,"n":7,"last_year":2011},"Chicago":{"rpm":3.85,"p25":3.55,"p75":4.34,"truckload":1077,"miles":280,"n":22,"last_year":2025},"New York":{"rpm":2.82,"p25":2.64,"p75":3.23,"truckload":2467,"miles":875,"n":7,"last_year":2011},"Philadelphia":{"rpm":2.87,"p25":2.46,"p75":3.14,"truckload":2339,"miles":815,"n":7,"last_year":2011}},"Mexico-Arizona":{"Atlanta":{"rpm":2.4,"p25":1.9,"p75":2.65,"truckload":4327,"miles":1800,"n":62,"last_year":2026},"Baltimore":{"rpm":2.49,"p25":2.1,"p75":2.95,"truckload":5841,"miles":2350,"n":36,"last_year":2026},"Boston":{"rpm":2.41,"p25":2.04,"p75":2.69,"truckload":6500,"miles":2700,"n":57,"last_year":2026},"Chicago":{"rpm":1.99,"p25":1.7,"p75":2.35,"truckload":3577,"miles":1800,"n":97,"last_year":2026},"Dallas":{"rpm":2.43,"p25":2.07,"p75":2.92,"truckload":2381,"miles":980,"n":94,"last_year":2026},"Los Angeles":{"rpm":1.92,"p25":1.57,"p75":2.43,"truckload":1077,"miles":560,"n":103,"last_year":2026},"Miami":{"rpm":2.31,"p25":2.02,"p75":2.59,"truckload":5259,"miles":2275,"n":72,"last_year":2025},"New York":{"rpm":2.3,"p25":1.94,"p75":2.69,"truckload":5742,"miles":2500,"n":100,"last_year":2026},"Philadelphia":{"rpm":2.39,"p25":2.06,"p75":2.73,"truckload":5746,"miles":2400,"n":85,"last_year":2026},"Seattle":{"rpm":2.21,"p25":1.9,"p75":2.31,"truckload":3538,"miles":1600,"n":5,"last_year":2020}},"Mexico-California":{"Atlanta":{"rpm":2.18,"p25":2.14,"p75":2.21,"truckload":4396,"miles":2020,"n":2,"last_year":2008},"Boston":{"rpm":1.95,"p25":1.92,"p75":1.98,"truckload":5667,"miles":2910,"n":2,"last_year":2008},"Chicago":{"rpm":1.82,"p25":1.78,"p75":1.86,"truckload":3694,"miles":2030,"n":2,"last_year":2008},"Dallas":{"rpm":2.74,"p25":2.7,"p75":2.78,"truckload":3398,"miles":1240,"n":2,"last_year":2008},"Los Angeles":{"rpm":5.21,"p25":5.09,"p75":5.33,"truckload":1146,"miles":220,"n":2,"last_year":2008},"New York":{"rpm":2.06,"p25":2.03,"p75":2.09,"truckload":5546,"miles":2690,"n":2,"last_year":2008},"Philadelphia":{"rpm":2.06,"p25":2.03,"p75":2.09,"truckload":5392,"miles":2620,"n":2,"last_year":2008},"Seattle":{"rpm":1.81,"p25":1.77,"p75":1.85,"truckload":2442,"miles":1350,"n":2,"last_year":2008}},"Mexico-Texas":{"Atlanta":{"rpm":2.25,"p25":1.91,"p75":2.79,"truckload":2585,"miles":1150,"n":89,"last_year":2026},"Baltimore":{"rpm":2.35,"p25":2.08,"p75":2.72,"truckload":4208,"miles":1790,"n":75,"last_year":2026},"Boston":{"rpm":2.26,"p25":1.91,"p75":2.57,"truckload":4969,"miles":2200,"n":80,"last_year":2026},"Chicago":{"rpm":2.01,"p25":1.7,"p75":2.37,"truckload":2873,"miles":1430,"n":91,"last_year":2026},"Dallas":{"rpm":2.55,"p25":2.2,"p75":3.32,"truckload":1277,"miles":500,"n":91,"last_year":2026},"Los Angeles":{"rpm":1.67,"p25":1.38,"p75":1.97,"truckload":2671,"miles":1600,"n":89,"last_year":2026},"Miami":{"rpm":2.25,"p25":2.04,"p75":2.71,"truckload":3441,"miles":1530,"n":86,"last_year":2026},"New York":{"rpm":2.26,"p25":1.94,"p75":2.62,"truckload":4518,"miles":2000,"n":86,"last_year":2026},"Philadelphia":{"rpm":2.28,"p25":2.01,"p75":2.68,"truckload":4338,"miles":1900,"n":85,"last_year":2026},"Seattle":{"rpm":2.23,"p25":2.06,"p75":2.63,"truckload":5342,"miles":2400,"n":30,"last_year":2022}},"Mid-Atlantic":{"Atlanta":{"rpm":2.36,"p25":2.11,"p75":3.05,"truckload":1650,"miles":700,"n":23,"last_year":2025},"Baltimore":{"rpm":8.9,"p25":8.31,"p75":9.84,"truckload":890,"miles":100,"n":19,"last_year":2025},"Boston":{"rpm":3.96,"p25":3.33,"p75":4.61,"truckload":1784,"miles":450,"n":22,"last_year":2025},"Chicago":{"rpm":1.98,"p25":1.77,"p75":2.15,"truckload":1587,"miles":800,"n":20,"last_year":2025},"New York":{"rpm":5.24,"p25":3.16,"p75":6.42,"truckload":1206,"miles":230,"n":31,"last_year":2025},"Philadelphia":{"rpm":7.29,"p25":6.06,"p75":7.76,"truckload":1020,"miles":140,"n":23,"last_year":2025}},"New York":{"Atlanta":{"rpm":2.3,"p25":1.96,"p75":3.5,"truckload":2286,"miles":993,"n":93,"last_year":2026},"Baltimore":{"rpm":4.55,"p25":3.8,"p75":5.01,"truckload":1501,"miles":330,"n":62,"last_year":2023},"Boston":{"rpm":8.29,"p25":5.83,"p75":11.76,"truckload":1649,"miles":199,"n":91,"last_year":2026},"Chicago":{"rpm":1.69,"p25":1.33,"p75":3.04,"truckload":1419,"miles":839,"n":40,"last_year":2023},"Dallas":{"rpm":1.99,"p25":1.9,"p75":2.69,"truckload":3325,"miles":1670,"n":10,"last_year":2023},"Miami":{"rpm":2.46,"p25":2.09,"p75":2.86,"truckload":3562,"miles":1450,"n":74,"last_year":2026},"New York":{"rpm":7.35,"p25":4.97,"p75":11.46,"truckload":1154,"miles":157,"n":102,"last_year":2026},"Philadelphia":{"rpm":5.65,"p25":4.55,"p75":7.81,"truckload":1250,"miles":221,"n":87,"last_year":2026}},"Other":{"Atlanta":{"rpm":2.44,"p25":1.87,"p75":2.95,"truckload":2251,"miles":921,"n":106,"last_year":2026},"Baltimore":{"rpm":2.57,"p25":2.39,"p75":3.2,"truckload":3765,"miles":1465,"n":77,"last_year":2026},"Boston":{"rpm":2.71,"p25":2.34,"p75":2.9,"truckload":3658,"miles":1348,"n":89,"last_year":2026},"Chicago":{"rpm":2.12,"p25":1.56,"p75":2.48,"truckload":1915,"miles":905,"n":99,"last_year":2024},"Dallas":{"rpm":2.96,"p25":2.0,"p75":3.24,"truckload":1679,"miles":567,"n":106,"last_year":2026},"Los Angeles":{"rpm":1.64,"p25":1.33,"p75":1.88,"truckload":1557,"miles":949,"n":85,"last_year":2021},"Miami":{"rpm":2.19,"p25":1.86,"p75":2.37,"truckload":4387,"miles":2004,"n":72,"last_year":2021},"New York":{"rpm":2.5,"p25":2.08,"p75":3.13,"truckload":3255,"miles":1302,"n":92,"last_year":2022},"Philadelphia":{"rpm":2.63,"p25":2.26,"p75":3.35,"truckload":3241,"miles":1233,"n":78,"last_year":2023}},"Pnw":{"Atlanta":{"rpm":2.13,"p25":1.73,"p75":2.41,"truckload":4951,"miles":2322,"n":106,"last_year":2026},"Baltimore":{"rpm":2.31,"p25":2.13,"p75":2.72,"truckload":5686,"miles":2463,"n":79,"last_year":2026},"Boston":{"rpm":2.25,"p25":1.89,"p75":2.55,"truckload":6170,"miles":2744,"n":91,"last_year":2026},"Chicago":{"rpm":2.06,"p25":1.63,"p75":2.43,"truckload":3654,"miles":1775,"n":106,"last_year":2026},"Dallas":{"rpm":2.12,"p25":1.7,"p75":2.38,"truckload":3879,"miles":1830,"n":106,"last_year":2026},"Los Angeles":{"rpm":1.83,"p25":1.59,"p75":2.17,"truckload":1797,"miles":982,"n":106,"last_year":2026},"Miami":{"rpm":2.15,"p25":1.85,"p75":2.47,"truckload":6359,"miles":2959,"n":91,"last_year":2026},"New York":{"rpm":2.24,"p25":1.82,"p75":2.61,"truckload":5714,"miles":2549,"n":106,"last_year":2026},"Philadelphia":{"rpm":2.25,"p25":1.96,"p75":2.56,"truckload":5679,"miles":2525,"n":91,"last_year":2026},"Seattle":{"rpm":7.14,"p25":5.71,"p75":8.2,"truckload":1000,"miles":140,"n":75,"last_year":2026}},"Southeast":{"Atlanta":{"rpm":4.25,"p25":3.12,"p75":5.38,"truckload":1250,"miles":294,"n":99,"last_year":2025},"Baltimore":{"rpm":4.41,"p25":3.82,"p75":4.92,"truckload":1990,"miles":451,"n":74,"last_year":2026},"Boston":{"rpm":3.38,"p25":3.04,"p75":3.86,"truckload":3000,"miles":888,"n":87,"last_year":2026},"Chicago":{"rpm":2.94,"p25":2.28,"p75":3.46,"truckload":2505,"miles":852,"n":100,"last_year":2026},"Dallas":{"rpm":2.67,"p25":2.44,"p75":3.01,"truckload":2532,"miles":950,"n":32,"last_year":2026},"Los Angeles":{"rpm":1.77,"p25":1.62,"p75":2.06,"truckload":4154,"miles":2350,"n":20,"last_year":2026},"Miami":{"rpm":3.17,"p25":2.34,"p75":3.54,"truckload":1990,"miles":628,"n":86,"last_year":2026},"New York":{"rpm":3.59,"p25":2.81,"p75":4.21,"truckload":2500,"miles":697,"n":101,"last_year":2026},"Philadelphia":{"rpm":3.75,"p25":3.32,"p75":4.44,"truckload":2211,"miles":590,"n":87,"last_year":2026}},"Texas":{"Atlanta":{"rpm":2.3,"p25":1.71,"p75":2.63,"truckload":2225,"miles":968,"n":78,"last_year":2023},"Baltimore":{"rpm":2.43,"p25":2.21,"p75":2.61,"truckload":4044,"miles":1664,"n":49,"last_year":2023},"Boston":{"rpm":2.35,"p25":2.05,"p75":2.6,"truckload":4754,"miles":2019,"n":63,"last_year":2023},"Chicago":{"rpm":2.01,"p25":1.51,"p75":2.37,"truckload":2494,"miles":1243,"n":78,"last_year":2023},"Dallas":{"rpm":3.0,"p25":2.48,"p75":3.44,"truckload":1105,"miles":369,"n":78,"last_year":2023},"Los Angeles":{"rpm":1.55,"p25":1.18,"p75":1.84,"truckload":2178,"miles":1407,"n":74,"last_year":2021},"Miami":{"rpm":2.31,"p25":2.03,"p75":2.5,"truckload":3327,"miles":1438,"n":59,"last_year":2023},"New York":{"rpm":2.22,"p25":1.72,"p75":2.63,"truckload":4020,"miles":1811,"n":78,"last_year":2022},"Philadelphia":{"rpm":2.37,"p25":2.0,"p75":2.58,"truckload":4049,"miles":1710,"n":64,"last_year":2023},"Seattle":{"rpm":2.3,"p25":2.17,"p75":2.33,"truckload":5035,"miles":2188,"n":15,"last_year":2021}}},"origins":["Arizona","California","Florida","Great Lakes","Indiana","Mexico-Arizona","Mexico-California","Mexico-Texas","Mid-Atlantic","New York","Other","Pnw","Southeast","Texas"],"diesel_default":5.403,"diesel_date":"2026-04-20","default_mpg":6.0,"default_margin":15,"market":{"overall_median_rpm":2.48,"latest_year":2026,"latest_median_rpm":3.44,"ratio":1.38},"meta":{"n_records":8292,"n_lanes":124,"year_min":2000,"year_max":2026,"source":"USDA AMS reefer lane rates + EIA diesel"}};
+const $ = id => document.getElementById(id);
+const money = n => "$" + Math.round(n).toLocaleString();
+
+$("hN").textContent = DATA.meta.n_records.toLocaleString();
+$("diesel").value = DATA.diesel_default;
+$("margin").value = DATA.default_margin;
+$("dieselSrc").textContent = `Diesel prefilled from EIA national average, week of ${DATA.diesel_date}. Edit if you have a current number.`;
+
+// populate origins
+DATA.origins.forEach(o=>{const e=document.createElement("option");e.value=o;e.textContent=o;$("origin").appendChild(e);});
+function fillDests(){
+  const o=$("origin").value; $("dest").innerHTML="";
+  Object.keys(DATA.lanes[o]).sort().forEach(d=>{const e=document.createElement("option");e.value=d;e.textContent=d;$("dest").appendChild(e);});
+  syncMiles();
+}
+function syncMiles(){
+  const lane=DATA.lanes[$("origin").value][$("dest").value];
+  if(lane && lane.miles) $("miles").value=lane.miles;
+}
+$("origin").addEventListener("change", fillDests);
+$("dest").addEventListener("change", syncMiles);
+
+function quote(){
+  const o=$("origin").value, d=$("dest").value;
+  const lane=DATA.lanes[o][d];
+  const miles=Math.max(1, +$("miles").value||lane.miles);
+  const diesel=Math.max(0, +$("diesel").value||0);
+  const margin=Math.min(60, Math.max(0, +$("margin").value||0));
+  const mpg=DATA.default_mpg;
+
+  const carrierCost = lane.rpm * miles;            // all-in benchmark (fuel included)
+  const costLow = lane.p25 * miles, costHigh = lane.p75 * miles;
+  const fuelCost = (diesel/mpg) * miles;           // how much of that is diesel
+  const fuelPct = carrierCost>0 ? Math.round(100*fuelCost/carrierCost) : 0;
+  const shipperQuote = carrierCost / (1 - margin/100);
+  const brokerMargin = shipperQuote - carrierCost;
+
+  $("qBig").textContent = money(shipperQuote);
+  $("qCap").textContent = `Quote the shipper ${money(shipperQuote)} for ${o} to ${d} (${miles.toLocaleString()} mi). Pay the carrier around ${money(carrierCost)}.`;
+  $("kRate").textContent = "$"+lane.rpm.toFixed(2);
+  $("kCost").textContent = money(carrierCost);
+  $("kMargin").textContent = money(brokerMargin);
+
+  $("breakdown").innerHTML = `
+    <div class="li"><span>Benchmark rate</span><span>$${lane.rpm.toFixed(2)}/mi (normal $${lane.p25.toFixed(2)} - $${lane.p75.toFixed(2)})</span></div>
+    <div class="li"><span>Carrier cost, all-in (${miles.toLocaleString()} mi)</span><span>${money(carrierCost)}</span></div>
+    <div class="li"><span>&nbsp;&nbsp;of which diesel (~${mpg} mpg @ $${diesel.toFixed(2)})</span><span>${money(fuelCost)} (${fuelPct}%)</span></div>
+    <div class="li"><span>Typical range for this lane</span><span>${money(costLow)} - ${money(costHigh)}</span></div>
+    <div class="li"><span>Your margin (${margin}%)</span><span>${money(brokerMargin)}</span></div>
+    <div class="li total"><span>Shipper quote</span><span>${money(shipperQuote)}</span></div>`;
+
+  // market gauge (national, this year vs long-run)
+  const r=DATA.market.ratio, g=$("gauge");
+  let cls="normal", msg;
+  if(r>=1.1){cls="hot";msg=`Market is HOT. ${DATA.market.latest_year} rates are running ${r}x the long-run average ($${DATA.market.latest_median_rpm}/mi vs $${DATA.market.overall_median_rpm}/mi). Carriers have leverage. Quote toward the high end.`;}
+  else if(r<=0.9){cls="soft";msg=`Market is SOFT. ${DATA.market.latest_year} rates are below the long-run average. Shippers have leverage. You can quote lean and still win the load.`;}
+  else{msg=`Market is NORMAL. ${DATA.market.latest_year} rates are near the long-run average.`;}
+  g.className="gauge "+cls; g.textContent=msg;
+}
+
+fillDests();
+quote();
+</script>
+</body>
+</html>
